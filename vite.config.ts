@@ -39,6 +39,31 @@ export default defineConfig({
           });
         },
       },
+      '/api/lighthouse': {
+        target: 'https://api.lighthouse.storage',
+        changeOrigin: true,
+        rewrite: (path) => {
+          // Rewrite /api/lighthouse/add to /api/v0/add (IPFS endpoint)
+          // or /api/lighthouse/upload to /api/upload (Lighthouse endpoint)
+          if (path.includes('/add')) {
+            return path.replace(/^\/api\/lighthouse/, '/api/v0');
+          }
+          // Default to /api/upload for Lighthouse upload endpoint
+          return path.replace(/^\/api\/lighthouse/, '/api');
+        },
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.log('Lighthouse proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, _res) => {
+            // Forward Authorization header if present
+            if (req.headers.authorization) {
+              proxyReq.setHeader('Authorization', req.headers.authorization);
+            }
+            console.log('Lighthouse proxy request:', req.method, req.url);
+          });
+        },
+      },
     },
   },
 });

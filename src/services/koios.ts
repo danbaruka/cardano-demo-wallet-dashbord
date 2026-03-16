@@ -437,3 +437,62 @@ export async function fetchAddressTransactions(address: string): Promise<Process
     }
 }
 
+/**
+ * Fetch asset metadata from Koios API
+ * @param policyId The policy ID of the asset
+ * @param assetName The asset name (hex)
+ * @returns Asset metadata if available
+ */
+export async function fetchAssetMetadata(policyId: string, assetName: string): Promise<any | null> {
+    try {
+        const response = await fetch(`${KOIOS_API_BASE}/asset_info`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                _asset_list: [`${policyId}${assetName}`],
+            }),
+        });
+
+        if (!response.ok) {
+            // Handle rate limiting
+            if (response.status === 429) {
+                throw new Error('Rate limited - too many requests');
+            }
+            throw new Error(`Failed to fetch asset info: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        if (data && data.length > 0 && data[0].minting_tx_metadata) {
+            // Extract metadata from CIP-68 format (label 721)
+            const metadata = data[0].minting_tx_metadata;
+            if (metadata['721'] && metadata['721'][policyId] && metadata['721'][policyId][assetName]) {
+                return metadata['721'][policyId][assetName];
+            }
+        }
+        return null;
+    } catch (error: any) {
+        // Only log non-rate-limit errors
+        if (!error?.message?.includes('Rate limited')) {
+            console.error('Error fetching asset metadata:', error);
+        }
+        return null;
+    }
+}
+
+/**
+ * Check if a URL points to an image
+ * @param url The URL to check
+ * @returns Promise<boolean> True if the URL is an image
+ */
+export async function isImageUrl(url: string): Promise<boolean> {
+    try {
+        const response = await fetch(url, { method: 'HEAD' });
+        const contentType = response.headers.get('content-type');
+        return contentType ? contentType.startsWith('image/') : false;
+    } catch (error) {
+        console.error('Error checking image URL:', error);
+        return false;
+    }
+}

@@ -15,3 +15,6 @@ export const KOIOS_API_BASE = import.meta.env.VITE_KOIOS_API_BASE || (
 
 // Cardanoscan (or explorer) base (e.g., 'https://preprod.cardanoscan.io')
 export const CARDANOSCANNER_BASE = import.meta.env.VITE_CARDANOSCANNER_BASE || 'https://preprod.cardanoscan.io';
+
+// Lighthouse Storage API key for IPFS uploads
+export const LIGHTHOUSE_STORAGE_APIKEY = import.meta.env.VITE_LIGHTHOUSE_STORAGE_APIKEY || '';
