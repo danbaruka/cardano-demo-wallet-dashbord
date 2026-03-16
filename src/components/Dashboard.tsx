@@ -8,14 +8,24 @@ import {
   ArrowDownRight,
   PieChart,
   CheckCircle,
-  RefreshCw
+  RefreshCw,
+  Coins,
+  Home,
+  Plus,
+  Flame,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { useWallet, useAssets, useLovelace } from '@meshsdk/react';
 import { Transaction } from '@meshsdk/core';
 import { toast } from 'react-toastify';
 import TransactionModal from './TransactionModal';
-import { fetchAddressTransactions, ProcessedTransaction } from '../services/koios';
-import { ADDRESS_PREFIX, CARDANO_NETWORK } from '../config';
+import MintTokenModal from './MintTokenModal';
+import BurnTokenModal from './BurnTokenModal';
+import SendTokenModal from './SendTokenModal';
+import { fetchAddressTransactions, ProcessedTransaction, fetchAssetMetadata } from '../services/koios';
+import { ADDRESS_PREFIX, CARDANO_NETWORK, CARDANOSCANNER_BASE } from '../config';
+import { parseAssetUnit } from '../services/nativeTokens';
 
 interface DashboardProps {
   onDisconnect: () => void;
@@ -36,9 +46,17 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
   const [selectedTransaction, setSelectedTransaction] = useState<ProcessedTransaction | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<ProcessedTransaction[]>([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [walletAddress, setWalletAddress] = useState(propsWalletAddress);
   const [estimatedFee, setEstimatedFee] = useState('~0.17');
   const [lovelace, setLovelace] = useState<number | null>(null);
+  const [activeMenu, setActiveMenu] = useState<'transactions' | 'native-tokens'>('transactions');
+  const [showMintModal, setShowMintModal] = useState(false);
+  const [showBurnModal, setShowBurnModal] = useState(false);
+  const [showSendTokenModal, setShowSendTokenModal] = useState(false);
+  const [sendTokenMode, setSendTokenMode] = useState(false); // Toggle between ADA and token sending
+  const [copiedPolicyId, setCopiedPolicyId] = useState<string | null>(null);
+  const [tokenMetadata, setTokenMetadata] = useState<Record<string, { name?: string; symbol?: string; image?: string; description?: string }>>({});
 
   // Validate address by network prefix
   const validateNetworkAddress = (address: string): boolean => {
@@ -52,6 +70,7 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
       return;
     }
     
+    setIsLoadingBalance(true);
     try {
       console.log('Fetching balance from wallet...');
       
@@ -133,6 +152,8 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
       if (lovelaceFromHook && typeof lovelaceFromHook === 'number') {
         setLovelace(lovelaceFromHook);
       }
+    } finally {
+      setIsLoadingBalance(false);
     }
   }, [connected, wallet, lovelaceFromHook]);
 
@@ -196,6 +217,14 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
     }
   }, [lovelaceFromHook, lovelace]);
 
+  // Copy policy ID to clipboard
+  const handleCopyPolicyId = (policyId: string) => {
+    navigator.clipboard.writeText(policyId);
+    setCopiedPolicyId(policyId);
+    toast.success('Policy ID copied to clipboard');
+    setTimeout(() => setCopiedPolicyId(null), 2000);
+  };
+
   // Format address for display
   const displayAddress = walletAddress 
     ? `${walletAddress.slice(0, 13)}...${walletAddress.slice(-8)}` 
@@ -217,8 +246,16 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
       const txs = await fetchAddressTransactions(walletAddress);
       setRecentTransactions(txs);
     } catch (error: any) {
-      console.error('Error fetching transactions:', error);
-      toast.error('Failed to load transaction history');
+      // Don't show error for rate limiting - just skip transaction history
+      if (error?.message?.includes('429') || 
+          error?.message?.includes('Too Many Requests') ||
+          error?.message?.includes('Rate limited')) {
+        // Silently skip - user can retry later
+        setRecentTransactions([]);
+      } else {
+        console.error('Error fetching transactions:', error);
+        toast.error('Failed to load transaction history');
+      }
     } finally {
       setIsLoadingTransactions(false);
     }
@@ -247,6 +284,157 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
         unit: asset.unit,
       };
     });
+
+  // Process native tokens for native tokens view
+  const nativeTokens = (Array.isArray(assets) ? assets : [])
+    .filter((asset) => asset.unit !== 'lovelace')
+    .map((asset) => {
+      try {
+        const { policyId, assetName } = parseAssetUnit(asset.unit);
+        const quantity = parseFloat(asset.quantity || '0');
+        // Convert hex to string if possible
+        let displayName = asset.unit.slice(56, 64);
+        if (assetName && assetName.length > 0) {
+          try {
+            // Try to decode hex to UTF-8 string
+            const hexString = assetName;
+            // Use TextDecoder for proper UTF-8 decoding
+            const bytes = new Uint8Array(
+              hexString.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+            );
+            const decoder = new TextDecoder('utf-8', { fatal: false });
+            const decoded = decoder.decode(bytes);
+            
+            // Check if decoded string is valid (not just control characters or null bytes)
+            const cleanDecoded = decoded.replace(/\0/g, '').trim();
+            if (cleanDecoded.length > 0 && /[\w\s\-_]/.test(cleanDecoded)) {
+              displayName = cleanDecoded;
+            } else {
+              // Fallback: try simple ASCII decode
+              let asciiDecoded = '';
+              for (let i = 0; i < hexString.length; i += 2) {
+                const charCode = parseInt(hexString.substr(i, 2), 16);
+                if (charCode >= 32 && charCode < 127) { // Printable ASCII
+                  asciiDecoded += String.fromCharCode(charCode);
+                }
+              }
+              if (asciiDecoded.trim().length > 0) {
+                displayName = asciiDecoded.trim();
+              }
+            }
+          } catch (e) {
+            // Keep hex display if decode fails
+            console.warn('Failed to decode asset name:', assetName, e);
+          }
+        }
+        return {
+          unit: asset.unit,
+          policyId,
+          assetName: displayName, // This is the decoded name, not hex
+          quantity: quantity.toLocaleString('en-US', {
+            maximumFractionDigits: asset.quantity?.includes('.') ? 6 : 0,
+          }),
+          rawQuantity: asset.quantity || '0',
+        };
+      } catch (error) {
+        return {
+          unit: asset.unit,
+          policyId: asset.unit.slice(0, 56),
+          assetName: asset.unit.slice(56, 64),
+          quantity: parseFloat(asset.quantity || '0').toLocaleString(),
+          rawQuantity: asset.quantity || '0',
+        };
+      }
+    });
+
+  // Fetch metadata for native tokens with debouncing and rate limit handling
+  useEffect(() => {
+    // Debounce metadata fetching to avoid rate limits
+    const timeoutId = setTimeout(async () => {
+      if (!connected || nativeTokens.length === 0) return;
+
+      // Skip metadata fetching if we have too many tokens (to avoid rate limits)
+      // Only fetch for first few tokens, or skip entirely if rate limited
+      const tokensToFetch = nativeTokens.slice(0, 5); // Limit to first 5 tokens
+
+      // Batch requests with delay to avoid rate limiting
+      const fetchWithDelay = async (token: typeof nativeTokens[0], delay: number) => {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        try {
+          const { policyId, assetName } = parseAssetUnit(token.unit);
+          const metadata = await fetchAssetMetadata(policyId, assetName);
+          
+          if (metadata) {
+            // Get image URL from metadata
+            let imageUrl = metadata.image;
+            
+            // Process image URL - handle IPFS protocol and construct full URL if needed
+            if (imageUrl) {
+              // Remove any IPFS protocol prefix if present
+              imageUrl = imageUrl.replace(/^ipfs:\/\//, '');
+              
+              // If it's just a hash (no http), construct the full IPFS gateway URL
+              if (!imageUrl.startsWith('http')) {
+                imageUrl = `https://gateway.lighthouse.storage/ipfs/${imageUrl}`;
+              }
+              
+              // Try to validate it's an image (but don't block - let img tag handle errors)
+              try {
+                const img = new Image();
+                await new Promise((resolve, reject) => {
+                  img.onload = resolve;
+                  img.onerror = reject;
+                  img.src = imageUrl;
+                  setTimeout(() => reject(new Error('Timeout')), 5000);
+                });
+              } catch (error) {
+                // If validation fails, still try to use it (might be CORS or network issue)
+                // The img tag's onError will handle display fallback
+              }
+            }
+
+            return {
+              unit: token.unit,
+              metadata: {
+                name: metadata.name,
+                symbol: metadata.symbol,
+                image: imageUrl,
+                description: metadata.description,
+              },
+            };
+          }
+        } catch (error: any) {
+          // Silently handle rate limit errors - don't log them
+          if (error?.message?.includes('429') || 
+              error?.message?.includes('Too Many Requests') ||
+              error?.message?.includes('Rate limited')) {
+            // Rate limited - skip this token
+            return null;
+          }
+        }
+        return null;
+      };
+
+      // Fetch metadata with staggered delays to avoid rate limits (3 seconds between requests)
+      const metadataPromises = tokensToFetch.map((token, index) => 
+        fetchWithDelay(token, index * 3000) // 3 second delay between each request
+      );
+
+      const results = await Promise.all(metadataPromises);
+      const newMetadata: Record<string, { name?: string; symbol?: string; image?: string; description?: string }> = {};
+      
+      results.forEach((result) => {
+        if (result && result.metadata) {
+          newMetadata[result.unit] = result.metadata;
+        }
+      });
+
+      setTokenMetadata(newMetadata);
+    }, 2000); // Debounce by 2 seconds
+
+    return () => clearTimeout(timeoutId);
+  }, [nativeTokens, connected]);
 
   // Add ADA as first asset
   const allAssets = [
@@ -392,20 +580,48 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                 <span className="text-white font-bold text-lg hidden sm:block">Cardano Wallet</span>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={async () => {
-                    if (connected && disconnect) {
-                      await disconnect();
-                    }
-                    onDisconnect();
-                    toast.info('Wallet disconnected');
-                  }}
-                  className="flex items-center space-x-2 px-3 py-1.5 rounded-lg glass-card-hover text-blue-300 hover:text-white"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span className="hidden sm:inline text-sm">Disconnect</span>
-                </button>
+              <div className="flex items-center space-x-4">
+                {/* Menu Navigation */}
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => setActiveMenu('transactions')}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-all duration-200 ${
+                      activeMenu === 'transactions'
+                        ? 'bg-blue-500/30 text-white border border-blue-400/50'
+                        : 'glass-card-hover text-blue-300 hover:text-white'
+                    }`}
+                  >
+                    <Home className="w-4 h-4" />
+                    <span className="text-sm font-medium">Transactions</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveMenu('native-tokens')}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-all duration-200 ${
+                      activeMenu === 'native-tokens'
+                        ? 'bg-blue-500/30 text-white border border-blue-400/50'
+                        : 'glass-card-hover text-blue-300 hover:text-white'
+                    }`}
+                  >
+                    <Coins className="w-4 h-4" />
+                    <span className="text-sm font-medium">Native-Tokens</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={async () => {
+                      if (connected && disconnect) {
+                        await disconnect();
+                      }
+                      onDisconnect();
+                      toast.info('Wallet disconnected');
+                    }}
+                    className="flex items-center space-x-2 px-3 py-1.5 rounded-lg glass-card-hover text-blue-300 hover:text-white"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span className="hidden sm:inline text-sm">Disconnect</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -413,7 +629,9 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
 
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 md:py-6">
           <div className="mb-4">
-            <h1 className="text-xl md:text-2xl font-bold text-white mb-1">Dashboard</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-white mb-1">
+              {activeMenu === 'transactions' ? 'Transactions' : 'Native-Tokens'}
+            </h1>
             {isRestoring ? (
               <div className="h-4 w-48 bg-blue-500/20 rounded animate-pulse"></div>
             ) : (
@@ -421,6 +639,8 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
             )}
           </div>
 
+          {activeMenu === 'transactions' ? (
+            <>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-6">
             <div className="glass-card rounded-xl p-6 md:p-8">
               <p className="text-blue-300 text-sm mb-2">Total Balance</p>
@@ -447,8 +667,40 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                     </div>
                     <div>
                       <h3 className="text-white font-bold text-lg md:text-xl">Send Tokens</h3>
-                      <p className="text-blue-300/70 text-xs">Transfer tADA securely</p>
+                      <p className="text-blue-300/70 text-xs">
+                        {sendTokenMode ? 'Send Native Tokens' : 'Transfer tADA securely'}
+                      </p>
                     </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => {
+                        setSendTokenMode(false);
+                        setShowSendTokenModal(false);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        !sendTokenMode
+                          ? 'bg-blue-500/30 text-white border border-blue-400/50'
+                          : 'glass-card-hover text-blue-300 hover:text-white'
+                      }`}
+                      disabled={isProcessing}
+                    >
+                      Send ADA
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSendTokenMode(true);
+                        setShowSendTokenModal(true);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        sendTokenMode
+                          ? 'bg-blue-500/30 text-white border border-blue-400/50'
+                          : 'glass-card-hover text-blue-300 hover:text-white'
+                      }`}
+                      disabled={isProcessing}
+                    >
+                      Send Token
+                    </button>
                   </div>
                   {txStatus !== 'idle' && (
                     <div className={`text-xs px-3 py-1.5 rounded-full font-medium backdrop-blur-sm ${
@@ -471,7 +723,7 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                     <div className="h-12 bg-blue-500/20 rounded-xl animate-pulse"></div>
                     <div className="h-12 bg-blue-500/20 rounded-xl animate-pulse"></div>
                   </div>
-                ) : (
+                ) : !sendTokenMode ? (
                 <div className="space-y-5">
                   <div className="relative">
                     <label className="text-blue-300 text-sm font-medium mb-2 block flex items-center space-x-2">
@@ -615,6 +867,10 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                     </span>
                   </button>
                 </div>
+                ) : (
+                  <div className="p-8 text-center">
+                    <p className="text-blue-300 text-sm mb-4">Click "Send Token" button above to send native tokens</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -760,6 +1016,163 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
               )}
             </div>
           </div>
+          </>
+          ) : (
+            <div className="space-y-6">
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div>
+                    <h2 className="text-xl md:text-2xl font-bold text-white mb-1">Native Tokens</h2>
+                    <p className="text-blue-300 text-xs md:text-sm">Manage your Cardano native tokens</p>
+                  </div>
+                  {!isRestoring && (
+                    <button
+                      onClick={fetchBalance}
+                      disabled={isRestoring || isLoadingBalance}
+                      className="p-2 rounded-lg glass-card-hover text-blue-300 hover:text-white transition-colors disabled:opacity-50"
+                      title="Refresh native tokens"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isLoadingBalance ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowMintModal(true)}
+                    disabled={isRestoring}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="text-sm">Mint</span>
+                  </button>
+                  <button
+                    onClick={() => setShowBurnModal(true)}
+                    disabled={isRestoring || nativeTokens.length === 0}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-500 hover:to-orange-400 text-white font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Flame className="w-4 h-4" />
+                    <span className="text-sm">Burn</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Token List */}
+              {isRestoring ? (
+                <div className="glass-card rounded-xl p-6">
+                  <div className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-16 bg-blue-500/20 rounded-xl animate-pulse"></div>
+                    ))}
+                  </div>
+                </div>
+              ) : nativeTokens.length === 0 ? (
+                <div className="glass-card rounded-xl p-12 text-center">
+                  <Coins className="w-16 h-16 text-blue-400/40 mx-auto mb-4" />
+                  <p className="text-blue-300 text-lg font-semibold mb-2">No Native Tokens</p>
+                  <p className="text-blue-400/60 text-sm mb-6">Mint your first native token to get started</p>
+                  <button
+                    onClick={() => setShowMintModal(true)}
+                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold transition-all"
+                  >
+                    Mint Token
+                  </button>
+                </div>
+              ) : (
+                <div className="glass-card rounded-xl p-6">
+                  <div className="space-y-4">
+                    {nativeTokens.map((token) => {
+                      const explorerUrl = `${CARDANOSCANNER_BASE}/tokenPolicy/${token.policyId}`;
+                      const isCopied = copiedPolicyId === token.policyId;
+                      
+                      return (
+                        <div
+                          key={token.unit}
+                          className="flex items-center justify-between p-5 rounded-xl bg-blue-950/40 border border-blue-400/20 hover:border-cyan-400/40 transition-all"
+                        >
+                          <div className="flex items-center space-x-4 flex-1">
+                            {/* Token Image/Icon */}
+                            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center flex-shrink-0 overflow-hidden relative">
+                              {tokenMetadata[token.unit]?.image ? (
+                                <img
+                                  src={tokenMetadata[token.unit].image}
+                                  alt={tokenMetadata[token.unit]?.name || token.assetName}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    // Hide image on error - fallback will show
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                  }}
+                                />
+                              ) : null}
+                              {/* Fallback initial - always present but hidden when image is shown */}
+                              <span 
+                                className="text-white font-bold text-lg absolute inset-0 flex items-center justify-center"
+                                style={{ display: tokenMetadata[token.unit]?.image ? 'none' : 'flex' }}
+                              >
+                                {(tokenMetadata[token.unit]?.name || token.assetName || 'T')[0]?.toUpperCase() || 'T'}
+                              </span>
+                            </div>
+                            
+                            {/* Token Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2">
+                                <p className="text-white font-semibold text-base truncate">
+                                  {tokenMetadata[token.unit]?.name || token.assetName || 'Unknown Token'}
+                                </p>
+                                {tokenMetadata[token.unit]?.symbol && (
+                                  <span className="text-blue-300 text-sm font-medium px-2 py-0.5 rounded bg-blue-500/20">
+                                    {tokenMetadata[token.unit].symbol}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <p className="text-blue-300 text-xs font-mono truncate">
+                                  Policy: {token.policyId.slice(0, 16)}...
+                                </p>
+                                <button
+                                  onClick={() => handleCopyPolicyId(token.policyId)}
+                                  className="p-1 rounded hover:bg-blue-500/20 transition-colors flex-shrink-0"
+                                  title="Copy Policy ID"
+                                >
+                                  {isCopied ? (
+                                    <CheckCircle className="w-3 h-3 text-green-400" />
+                                  ) : (
+                                    <Copy className="w-3 h-3 text-blue-300" />
+                                  )}
+                                </button>
+                                <a
+                                  href={explorerUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1 rounded hover:bg-blue-500/20 transition-colors flex-shrink-0"
+                                  title="View in Explorer"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLink className="w-3 h-3 text-blue-300" />
+                                </a>
+                              </div>
+                              {tokenMetadata[token.unit]?.description && (
+                                <p className="text-blue-400/60 text-xs mt-1 truncate">
+                                  {tokenMetadata[token.unit].description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Quantity */}
+                          <div className="text-right ml-4">
+                            <p className="text-white font-bold text-lg">{token.quantity}</p>
+                            <p className="text-blue-400/60 text-xs mt-1">Available</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </main>
 
         <footer className="relative z-10 border-t border-blue-400/10 mt-auto">
@@ -774,6 +1187,37 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
       <TransactionModal
         transaction={selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
+      />
+
+      <MintTokenModal
+        isOpen={showMintModal}
+        onClose={() => setShowMintModal(false)}
+        onSuccess={() => {
+          // Refresh assets/balance
+          fetchBalance();
+        }}
+      />
+
+      <BurnTokenModal
+        isOpen={showBurnModal}
+        onClose={() => setShowBurnModal(false)}
+        onSuccess={() => {
+          // Refresh assets/balance
+          fetchBalance();
+        }}
+      />
+
+      <SendTokenModal
+        isOpen={showSendTokenModal}
+        onClose={() => {
+          setShowSendTokenModal(false);
+          setSendTokenMode(false);
+        }}
+        onSuccess={() => {
+          // Refresh transactions and balance
+          fetchTransactions();
+          fetchBalance();
+        }}
       />
     </div>
   );
