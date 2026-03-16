@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guidelines
+    url: https://github.com/REPO_OWNER/REPO_NAME/blob/main/CONTRIBUTING.md
+    about: Read how to contribute before opening an issue or PR.
+
+  - name: Discussions
+    url: https://github.com/REPO_OWNER/REPO_NAME/discussions
+    about: Ask questions or share ideas.

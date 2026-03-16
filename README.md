@@ -1,5 +1,7 @@
 # Cardano Demo Wallet Dashboard
 
+**This repository is an exercise and example project for developer experience.** It is intended for learning, workshops, and as a reference implementation when building on Cardano. Use it to practice frontend tooling, wallet integration patterns, and contribution workflows.
+
 Modern frontend dashboard for interacting with Cardano wallet services. Built with Vite, React, and TypeScript to provide a responsive experience for monitoring wallet balances, recent activity, and USD conversions through Koios APIs.
 
 ## Project Prerequisites
@@ -49,22 +51,10 @@ src/
 public/                  Static assets
 ```
 
-## Git Setup
-
-A fresh git repository has been initialized for this project. Standard Node and Vite build outputs are excluded via `.gitignore`. If you need to reset or reinitialize, run:
-
-```bash
-rm -rf .git
-git init
-```
-
 ## Contributing
 
-1. Create a feature branch from `main`.
-2. Commit changes with clear, conventional messages.
-3. Run `npm run build` before submitting a pull request to ensure the project compiles cleanly.
+We welcome contributions. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md) before opening an issue or pull request.
 
 ## License
 
-This project is provided as-is. Add licensing terms here if you plan to distribute the dashboard.
-
+This project is open source and available under the [MIT License](LICENSE).
