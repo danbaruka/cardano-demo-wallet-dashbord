@@ -1,0 +1,19 @@
+name = "intersect/devex-owner-lock"
+version = "0.0.0"
+compiler = "v1.1.21"
+plutus = "v3"
+license = "Apache-2.0"
+description = "Aiken contracts for project 'intersect/devex-owner-lock'"
+
+[repository]
+user = "intersect"
+project = "devex-owner-lock"
+platform = "github"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "v3.1.0"
+source = "github"
+
+[config]
+

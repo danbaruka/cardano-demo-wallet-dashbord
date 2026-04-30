@@ -13,6 +13,8 @@ import {
   Home,
   Plus,
   Flame,
+  Lock,
+  FileCode,
   Copy,
   ExternalLink
 } from 'lucide-react';
@@ -23,6 +25,8 @@ import TransactionModal from './TransactionModal';
 import MintTokenModal from './MintTokenModal';
 import BurnTokenModal from './BurnTokenModal';
 import SendTokenModal from './SendTokenModal';
+import OwnerLockModal from './OwnerLockModal';
+import SmartContractPage from './SmartContractPage';
 import { fetchAddressTransactions, ProcessedTransaction, fetchAssetMetadata } from '../services/koios';
 import { ADDRESS_PREFIX, CARDANO_NETWORK, CARDANOSCANNER_BASE } from '../config';
 import { parseAssetUnit } from '../services/nativeTokens';
@@ -50,10 +54,11 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
   const [walletAddress, setWalletAddress] = useState(propsWalletAddress);
   const [estimatedFee, setEstimatedFee] = useState('~0.17');
   const [lovelace, setLovelace] = useState<number | null>(null);
-  const [activeMenu, setActiveMenu] = useState<'transactions' | 'native-tokens'>('transactions');
+  const [activeMenu, setActiveMenu] = useState<'transactions' | 'native-tokens' | 'smart-contract'>('transactions');
   const [showMintModal, setShowMintModal] = useState(false);
   const [showBurnModal, setShowBurnModal] = useState(false);
   const [showSendTokenModal, setShowSendTokenModal] = useState(false);
+  const [showOwnerLockModal, setShowOwnerLockModal] = useState(false);
   const [sendTokenMode, setSendTokenMode] = useState(false); // Toggle between ADA and token sending
   const [copiedPolicyId, setCopiedPolicyId] = useState<string | null>(null);
   const [tokenMetadata, setTokenMetadata] = useState<Record<string, { name?: string; symbol?: string; image?: string; description?: string }>>({});
@@ -605,6 +610,17 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                     <Coins className="w-4 h-4" />
                     <span className="text-sm font-medium">Native-Tokens</span>
                   </button>
+                  <button
+                    onClick={() => setActiveMenu('smart-contract')}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-all duration-200 ${
+                      activeMenu === 'smart-contract'
+                        ? 'bg-blue-500/30 text-white border border-blue-400/50'
+                        : 'glass-card-hover text-blue-300 hover:text-white'
+                    }`}
+                  >
+                    <FileCode className="w-4 h-4" />
+                    <span className="text-sm font-medium">Smart Contract</span>
+                  </button>
                 </div>
 
                 <div className="flex items-center space-x-2">
@@ -630,7 +646,11 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 md:py-6">
           <div className="mb-4">
             <h1 className="text-xl md:text-2xl font-bold text-white mb-1">
-              {activeMenu === 'transactions' ? 'Transactions' : 'Native-Tokens'}
+              {activeMenu === 'transactions'
+                ? 'Transactions'
+                : activeMenu === 'native-tokens'
+                  ? 'Native-Tokens'
+                  : 'Smart Contract'}
             </h1>
             {isRestoring ? (
               <div className="h-4 w-48 bg-blue-500/20 rounded animate-pulse"></div>
@@ -700,6 +720,17 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                       disabled={isProcessing}
                     >
                       Send Token
+                    </button>
+                    <button
+                      onClick={() => setShowOwnerLockModal(true)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all glass-card-hover text-blue-300 hover:text-white"
+                      disabled={isProcessing || isRestoring}
+                      title="Open Script Vault"
+                    >
+                      <span className="inline-flex items-center space-x-1">
+                        <Lock className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Vault</span>
+                      </span>
                     </button>
                   </div>
                   {txStatus !== 'idle' && (
@@ -1017,7 +1048,7 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
             </div>
           </div>
           </>
-          ) : (
+          ) : activeMenu === 'native-tokens' ? (
             <div className="space-y-6">
               {/* Action Buttons */}
               <div className="flex items-center justify-between">
@@ -1172,6 +1203,8 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                 </div>
               )}
             </div>
+          ) : (
+            <SmartContractPage />
           )}
         </main>
 
@@ -1215,6 +1248,15 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
         }}
         onSuccess={() => {
           // Refresh transactions and balance
+          fetchTransactions();
+          fetchBalance();
+        }}
+      />
+
+      <OwnerLockModal
+        isOpen={showOwnerLockModal}
+        onClose={() => setShowOwnerLockModal(false)}
+        onSuccess={() => {
           fetchTransactions();
           fetchBalance();
         }}

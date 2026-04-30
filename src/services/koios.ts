@@ -80,6 +80,44 @@ export interface TransactionStatus {
     num_confirmations: number;
 }
 
+export interface KoiosUtxo {
+    tx_hash: string;
+    tx_index: number;
+    value: string;
+    datum_hash?: string | null;
+    inline_datum?: any;
+    asset_list?: Array<{
+        policy_id: string;
+        asset_name: string;
+        quantity: string;
+    }>;
+}
+
+/**
+ * Fetch UTxOs for an address (works for script addresses too).
+ *
+ * Uses Koios `address_utxos` endpoint which includes datum fields when available.
+ */
+export async function fetchAddressUtxos(address: string): Promise<KoiosUtxo[]> {
+    const response = await fetch(`${KOIOS_API_BASE}/address_utxos`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+            _addresses: [address],
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Koios API error: ${response.statusText}`);
+    }
+
+    const utxos: KoiosUtxo[] = await response.json();
+    return Array.isArray(utxos) ? utxos : [];
+}
+
 /**
  * Fetch transaction status (confirmations) for given transaction hashes
  */

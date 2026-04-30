@@ -1,0 +1,185 @@
+name: Continuous Integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🧰 Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: 🧰 Install Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      # FIXME: Temporary, re-enable once v1.1.22 is available.
+      #
+      # - name: 📝 Run fmt
+      #   run: aiken fmt --check
+
+      - name: 🔬 Run tests (verbose)
+        run: aiken check -t verbose
+
+      - name: 🔬 Run tests (silent)
+        run: aiken check -t silent
+
+  docs:
+    strategy:
+      matrix:
+        include:
+          - stdlib_version: v1.9.0
+            legacy_aiken_setup: true
+            aiken_version: v1.0.29-alpha
+            runner: ubuntu-22.04
+
+          - stdlib_version: v2.0.0
+            legacy_aiken_setup: true
+            aiken_version: v1.1.2
+
+          - stdlib_version: v2.1.0
+
+          - stdlib_version: v2.2.0
+
+          - stdlib_version: v2.2.1
+
+          - stdlib_version: v3.0.0
+
+          - stdlib_version: ""
+
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.stdlib_version }}
+
+      - name: 🧰 Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: 🧰 Install Aiken (legacy)
+        if: ${{ matrix.legacy_aiken_setup }}
+        uses: aiken-lang/setup-aiken@v1.0.2
+        with:
+          version: ${{ matrix.aiken_version || 'v1.1.19' }}
+
+      - name: 🧰 Install Aiken
+        if: ${{ !matrix.legacy_aiken_setup }}
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: ${{ matrix.aiken_version || 'v1.1.19' }}
+
+      - name: 📘 Generate documentation
+        shell: bash
+        working-directory: .
+        run: aiken docs -o docs/${{ matrix.stdlib_version }}
+
+        # Make sure that the documentation for v2.2.0 points to v2.2.1 with the
+        # warning comment about foldl2.
+      - name: 🏠 Redirection page for v-less sub-directories
+        if: ${{ matrix.stdlib_version == 'v2.2.0' }}
+        shell: bash
+        working-directory: docs
+        run: |
+          mkdir -p v2.2.0
+          cat > v2.2.0/index.html <<HTML
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Aiken StdLib API reference</title>
+                <link rel="canonical" href="https://aiken-lang.github.io/stdlib"/>
+                <meta name="robots" content="noindex">
+                <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+                <meta http-equiv="refresh" content="0; url=/stdlib/v2.2.1"/>
+              </head>
+            </html>
+          HTML
+
+          mkdir -p 2.2.0
+          cat > 2.2.0/index.html <<HTML
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Aiken StdLib API reference</title>
+                <link rel="canonical" href="https://aiken-lang.github.io/stdlib"/>
+                <meta name="robots" content="noindex">
+                <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+                <meta http-equiv="refresh" content="0; url=/stdlib/v2.2.1"/>
+              </head>
+            </html>
+          HTML
+
+      - name: 🏠 Redirection page for v-less sub-directories
+        if: ${{ matrix.stdlib_version && matrix.stdlib_version != 'v2.2.0' }}
+        shell: bash
+        working-directory: docs
+        run: |
+          version=$(echo ${{matrix.stdlib_version}} | cut -c2-)
+          mkdir -p $version
+          cat > $version/index.html <<HTML
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Aiken StdLib API reference</title>
+                <link rel="canonical" href="https://aiken-lang.github.io/stdlib"/>
+                <meta name="robots" content="noindex">
+                <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+                <meta http-equiv="refresh" content="0; url=/stdlib/${{ matrix.stdlib_version }}"/>
+              </head>
+            </html>
+          HTML
+
+      - name: 📦 Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiken-docs-${{ matrix.stdlib_version || 'latest' }}
+          path: docs
+          retention-days: 1
+
+  bundle-docs:
+    runs-on: ubuntu-latest
+    needs: [docs]
+    steps:
+      - name: 📥 Download all doc artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: aiken-docs-*
+          merge-multiple: true
+
+      - name: 📦 Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: .
+
+  deploy-docs:
+    needs: [bundle-docs]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
