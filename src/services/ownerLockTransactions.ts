@@ -1,15 +1,15 @@
-import { KoiosProvider, MeshTxBuilder, resolvePaymentKeyHash } from '@meshsdk/core';
+import { MeshTxBuilder, resolvePaymentKeyHash } from '@meshsdk/core';
 import type { BrowserWallet, IWallet } from '@meshsdk/core';
 
-import { CARDANO_NETWORK } from '../config';
 import { buildOwnerLockDatum, getOwnerLockScript, getOwnerLockScriptAddress } from './ownerLock';
 import type { OwnerLockedUtxo } from './ownerLockUtxos';
 import { fetchAddressUtxos } from './koios';
+import { KoiosProxyProvider } from './koiosProxyProvider';
 
-function getKoiosProvider(): KoiosProvider {
-  // MeshJS KoiosProvider expects a network string like "preprod" | "preview" | "mainnet"
-  const network = CARDANO_NETWORK === 'testnet' ? 'preprod' : CARDANO_NETWORK;
-  return new KoiosProvider(network);
+function getKoiosProvider(): KoiosProxyProvider {
+  // A small Koios fetcher that uses KOIOS_API_BASE (/api/koios in dev)
+  // and does NOT send any Authorization header (KoiosProvider(baseUrl) does).
+  return new KoiosProxyProvider();
 }
 
 export async function lockAdaToOwnerScript(
@@ -25,7 +25,7 @@ export async function lockAdaToOwnerScript(
   const scriptAddress = getOwnerLockScriptAddress();
   const datum = buildOwnerLockDatum(ownerAddress);
 
-  const txBuilder = new MeshTxBuilder({ fetcher: provider });
+  const txBuilder = new MeshTxBuilder({ fetcher: provider as any });
 
   const unsignedTx = await txBuilder
     .txOut(scriptAddress, [{ unit: 'lovelace', quantity: amountLovelace }])
@@ -64,16 +64,17 @@ export async function unlockAdaFromOwnerScript(
   // We lock only lovelace in this demo.
   const targetAmount = [{ unit: 'lovelace', quantity: target.value }];
 
-  const datum = buildOwnerLockDatum(ownerAddress);
   const redeemer = { alternative: 0, fields: [] };
 
   const provider = getKoiosProvider();
-  const txBuilder = new MeshTxBuilder({ fetcher: provider });
+  const txBuilder = new MeshTxBuilder({ fetcher: provider as any });
 
   const unsignedTx = await txBuilder
     .spendingPlutusScriptV3()
     .txIn(target.tx_hash, target.tx_index, targetAmount, scriptAddress)
-    .txInDatumValue(datum)
+    // The UTxO was created by our lock flow using txOutInlineDatumValue(...),
+    // so the datum is inline on the output. Do NOT add a supplemental datum.
+    .txInInlineDatumPresent()
     .txInRedeemerValue(redeemer)
     .txInScript(script.code)
     .txOut(changeAddress, targetAmount)

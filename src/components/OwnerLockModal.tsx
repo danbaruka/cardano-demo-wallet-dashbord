@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { lockAdaToOwnerScript, unlockAdaFromOwnerScript } from '../services/ownerLockTransactions';
 import { fetchMyOwnerLockedTotalLovelace, fetchMyOwnerLockedUtxos } from '../services/ownerLockUtxos';
 import { getOwnerLockScriptAddress } from '../services/ownerLock';
+import { waitForTxConfirmations } from '../services/koios';
 
 interface OwnerLockModalProps {
   isOpen: boolean;
@@ -112,7 +113,9 @@ export default function OwnerLockModal({ isOpen, onClose, onSuccess }: OwnerLock
     setUnlocking((m) => ({ ...m, [key]: true }));
     try {
       const txHash = await unlockAdaFromOwnerScript(wallet, { tx_hash, tx_index });
-      toast.success(`Unlocked funds. Tx: ${txHash.slice(0, 10)}…`);
+      toast.info(`Unlock submitted. Waiting for confirmation… (${txHash.slice(0, 10)}…)`);
+      await waitForTxConfirmations(txHash, { minConfirmations: 1, timeoutMs: 180_000, pollIntervalMs: 5_000 });
+      toast.success('Unlock confirmed on-chain.');
       await refresh();
       onSuccess?.();
     } catch (e: any) {

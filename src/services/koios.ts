@@ -157,6 +157,38 @@ export async function fetchTransactionStatus(txHashes: string[]): Promise<Map<st
     }
 }
 
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Poll Koios until a tx reaches the desired confirmation count.
+ * Intended for UI flows (disable buttons until confirmed).
+ */
+export async function waitForTxConfirmations(
+    txHash: string,
+    {
+        minConfirmations = 1,
+        timeoutMs = 120_000,
+        pollIntervalMs = 5_000,
+    }: {
+        minConfirmations?: number;
+        timeoutMs?: number;
+        pollIntervalMs?: number;
+    } = {},
+): Promise<number> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        const map = await fetchTransactionStatus([txHash]);
+        const confirmations = map.get(txHash) ?? 0;
+        if (confirmations >= minConfirmations) {
+            return confirmations;
+        }
+        await sleep(pollIntervalMs);
+    }
+    throw new Error('Timed out waiting for transaction confirmation');
+}
+
 /**
  * Fetch transaction history for a given address from Koios API
  */
