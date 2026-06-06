@@ -5,6 +5,7 @@ import { buildOwnerLockDatum, getOwnerLockScript, getOwnerLockScriptAddress } fr
 import type { OwnerLockedUtxo } from './ownerLockUtxos';
 import { fetchAddressUtxos } from './koios';
 import { KoiosProxyProvider } from './koiosProxyProvider';
+import { patchScriptIntegrityHash } from './scriptIntegrityPatch';
 
 function getKoiosProvider(): KoiosProxyProvider {
   // A small Koios fetcher that uses KOIOS_API_BASE (/api/koios in dev)
@@ -89,7 +90,8 @@ export async function unlockAdaFromOwnerScript(
     .selectUtxosFrom(utxos)
     .complete();
 
-  const signedTx = await wallet.signTx(unsignedTx, true);
+  const patchedTx = await patchScriptIntegrityHash(unsignedTx);
+  const signedTx = await wallet.signTx(patchedTx, true);
   return await wallet.submitTx(signedTx);
 }
 

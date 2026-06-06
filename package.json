@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "aiken:vesting": "cd aiken-vesting && aiken check && aiken build && cp plutus.json ../src/contracts/vesting/plutus.json"
   },
   "dependencies": {
     "@lighthouse-web3/sdk": "^0.4.3",

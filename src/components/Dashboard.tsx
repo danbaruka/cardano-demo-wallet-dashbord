@@ -14,6 +14,7 @@ import {
   Plus,
   Flame,
   Lock,
+  Clock,
   FileCode,
   Copy,
   ExternalLink
@@ -27,6 +28,7 @@ import BurnTokenModal from './BurnTokenModal';
 import SendTokenModal from './SendTokenModal';
 import OwnerLockModal from './OwnerLockModal';
 import SmartContractPage from './SmartContractPage';
+import VestingPage from './VestingPage';
 import { fetchAddressTransactions, ProcessedTransaction, fetchAssetMetadata } from '../services/koios';
 import { ADDRESS_PREFIX, CARDANO_NETWORK, CARDANOSCANNER_BASE } from '../config';
 import { parseAssetUnit } from '../services/nativeTokens';
@@ -54,7 +56,7 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
   const [walletAddress, setWalletAddress] = useState(propsWalletAddress);
   const [estimatedFee, setEstimatedFee] = useState('~0.17');
   const [lovelace, setLovelace] = useState<number | null>(null);
-  const [activeMenu, setActiveMenu] = useState<'transactions' | 'native-tokens' | 'smart-contract'>('transactions');
+  const [activeMenu, setActiveMenu] = useState<'transactions' | 'native-tokens' | 'smart-contract' | 'vesting'>('transactions');
   const [showMintModal, setShowMintModal] = useState(false);
   const [showBurnModal, setShowBurnModal] = useState(false);
   const [showSendTokenModal, setShowSendTokenModal] = useState(false);
@@ -621,6 +623,17 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                     <FileCode className="w-4 h-4" />
                     <span className="text-sm font-medium">Smart Contract</span>
                   </button>
+                  <button
+                    onClick={() => setActiveMenu('vesting')}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-all duration-200 ${
+                      activeMenu === 'vesting'
+                        ? 'bg-blue-500/30 text-white border border-blue-400/50'
+                        : 'glass-card-hover text-blue-300 hover:text-white'
+                    }`}
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span className="text-sm font-medium">Vesting</span>
+                  </button>
                 </div>
 
                 <div className="flex items-center space-x-2">
@@ -650,7 +663,9 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                 ? 'Transactions'
                 : activeMenu === 'native-tokens'
                   ? 'Native-Tokens'
-                  : 'Smart Contract'}
+                  : activeMenu === 'vesting'
+                    ? 'Vesting Distribution'
+                    : 'Smart Contract'}
             </h1>
             {isRestoring ? (
               <div className="h-4 w-48 bg-blue-500/20 rounded animate-pulse"></div>
@@ -1203,8 +1218,10 @@ export default function Dashboard({ onDisconnect, walletAddress: propsWalletAddr
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeMenu === 'smart-contract' ? (
             <SmartContractPage />
+          ) : (
+            <VestingPage />
           )}
         </main>
 

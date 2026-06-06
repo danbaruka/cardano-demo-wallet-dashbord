@@ -23,6 +23,12 @@ type KoiosEpochParams = Array<{
   max_block_ex_steps?: string;
   max_val_size?: number;
   decentralisation?: number;
+  min_fee_ref_script_cost_per_byte?: number;
+  cost_models?: {
+    PlutusV1?: number[];
+    PlutusV2?: number[];
+    PlutusV3?: number[];
+  } | null;
 }>;
 
 type KoiosTxInfoResponse = Array<{
@@ -153,9 +159,7 @@ export class KoiosProxyProvider {
       poolDeposit: Number(p.pool_deposit),
       priceMem: p.price_mem,
       priceStep: p.price_step,
-      // Koios epoch_params doesn't currently include this field; use a safe default.
-      // MeshTxBuilder requires it in Protocol shape.
-      minFeeRefScriptCostPerByte: 0,
+      minFeeRefScriptCostPerByte: p.min_fee_ref_script_cost_per_byte ?? 15,
     };
   }
 

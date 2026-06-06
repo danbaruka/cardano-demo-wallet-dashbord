@@ -84,6 +84,7 @@ export interface KoiosUtxo {
     tx_hash: string;
     tx_index: number;
     value: string;
+    address?: string;
     datum_hash?: string | null;
     inline_datum?: any;
     asset_list?: Array<{
@@ -93,12 +94,24 @@ export interface KoiosUtxo {
     }>;
 }
 
+export interface KoiosDatumInfo {
+    datum_hash: string;
+    creation_tx_hash?: string;
+    value?: unknown;
+    bytes?: string;
+}
+
 /**
  * Fetch UTxOs for an address (works for script addresses too).
  *
- * Uses Koios `address_utxos` endpoint which includes datum fields when available.
+ * Uses Koios `address_utxos` endpoint. Pass `extended: true` to include
+ * inline_datum, datum_hash, reference_script, and asset_list.
  */
-export async function fetchAddressUtxos(address: string): Promise<KoiosUtxo[]> {
+export async function fetchAddressUtxos(
+    address: string,
+    options?: { extended?: boolean },
+): Promise<KoiosUtxo[]> {
+    const extended = options?.extended ?? false;
     const response = await fetch(`${KOIOS_API_BASE}/address_utxos`, {
         method: 'POST',
         headers: {
@@ -107,6 +120,7 @@ export async function fetchAddressUtxos(address: string): Promise<KoiosUtxo[]> {
         },
         body: JSON.stringify({
             _addresses: [address],
+            _extended: extended,
         }),
     });
 
@@ -116,6 +130,32 @@ export async function fetchAddressUtxos(address: string): Promise<KoiosUtxo[]> {
 
     const utxos: KoiosUtxo[] = await response.json();
     return Array.isArray(utxos) ? utxos : [];
+}
+
+/**
+ * Resolve datum JSON for hashes when inline_datum is not returned by Koios.
+ */
+export async function fetchDatumInfo(datumHashes: string[]): Promise<KoiosDatumInfo[]> {
+    const unique = [...new Set(datumHashes.filter(Boolean))];
+    if (unique.length === 0) return [];
+
+    const response = await fetch(`${KOIOS_API_BASE}/datum_info`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+            _datum_hashes: unique,
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Koios datum_info error: ${response.statusText}`);
+    }
+
+    const rows: KoiosDatumInfo[] = await response.json();
+    return Array.isArray(rows) ? rows : [];
 }
 
 /**
